@@ -145,7 +145,7 @@ jobs:
           )
 
       - name: Upload classifier artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pdal-ffm-natives-${{ matrix.classifier }}
           path: pdal-ffm-natives/build/libs/pdal-ffm-natives-*-natives-${{ matrix.classifier }}.jar
