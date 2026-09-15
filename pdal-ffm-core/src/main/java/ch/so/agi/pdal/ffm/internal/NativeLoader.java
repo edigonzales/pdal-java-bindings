@@ -9,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarEntry;
@@ -86,12 +88,15 @@ final class NativeLoader {
     private static URL findManifest(String prefix, String classifier) {
         String manifestResource = prefix + "/manifest.json";
         try {
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-            if (classLoader == null) {
-                classLoader = NativeLoader.class.getClassLoader();
-            }
-            Enumeration<URL> urls = classLoader.getResources(manifestResource);
-            if (!urls.hasMoreElements()) {
+            // Hop executes transforms in plugin class loaders; the thread context
+            // class loader is not necessarily the plugin loader that contains the
+            // bundled natives. Search all relevant loaders and require one match.
+            List<URL> matches = new ArrayList<>();
+            collectManifests(Thread.currentThread().getContextClassLoader(), manifestResource, matches);
+            collectManifests(NativeLoader.class.getClassLoader(), manifestResource, matches);
+            collectManifests(ClassLoader.getSystemClassLoader(), manifestResource, matches);
+
+            if (matches.isEmpty()) {
                 throw new IllegalStateException(
                         "No bundled PDAL native resources found for classifier '" + classifier + "'. "
                                 + "Add runtime dependency ch.so.agi:pdal-ffm-natives:<VERSION>:natives-"
@@ -99,15 +104,15 @@ final class NativeLoader {
                 );
             }
 
-            URL first = urls.nextElement();
-            if (urls.hasMoreElements()) {
-                StringBuilder matches = new StringBuilder(first.toString());
-                while (urls.hasMoreElements()) {
-                    matches.append(", ").append(urls.nextElement());
+            URL first = matches.get(0);
+            if (matches.size() > 1) {
+                StringBuilder all = new StringBuilder(first.toString());
+                for (int i = 1; i < matches.size(); i++) {
+                    all.append(", ").append(matches.get(i));
                 }
                 throw new IllegalStateException(
                         "Multiple bundled PDAL native resources found for classifier '" + classifier + "': "
-                                + matches
+                                + all
                                 + ". Add exactly one runtime dependency "
                                 + "ch.so.agi:pdal-ffm-natives:<VERSION>:natives-" + classifier
                 );
@@ -115,6 +120,20 @@ final class NativeLoader {
             return first;
         } catch (IOException e) {
             throw new IllegalStateException("Failed to scan classpath for " + manifestResource, e);
+        }
+    }
+
+    private static void collectManifests(ClassLoader classLoader, String manifestResource, List<URL> matches)
+            throws IOException {
+        if (classLoader == null) {
+            return;
+        }
+        Enumeration<URL> urls = classLoader.getResources(manifestResource);
+        while (urls.hasMoreElements()) {
+            URL url = urls.nextElement();
+            if (matches.stream().noneMatch(existing -> existing.toString().equals(url.toString()))) {
+                matches.add(url);
+            }
         }
     }
 
