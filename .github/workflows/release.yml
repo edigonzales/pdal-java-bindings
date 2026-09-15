@@ -1,0 +1,208 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      verify-lock-closure:
+        description: "Run resolver drift check (tools/natives/refresh-lock-closure.sh --check)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-natives:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - classifier: linux-x86_64
+            os: ubuntu-24.04
+          - classifier: linux-aarch64
+            os: ubuntu-24.04-arm
+          - classifier: osx-x86_64
+            os: macos-15-intel
+          - classifier: osx-aarch64
+            os: macos-15
+          - classifier: windows-x86_64
+            os: windows-2025
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Install conda-package-handling
+        shell: bash
+        run: |
+          python -m pip install --user conda-package-handling
+          USER_BASE="$(python -m site --user-base)"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "$USER_BASE/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$USER_BASE/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Make scripts executable
+        shell: bash
+        run: chmod +x ./gradlew tools/natives/*.sh tools/ffi/*.sh
+
+      - name: Validate lock file
+        shell: bash
+        run: tools/natives/verify-lock.sh
+
+      - name: Validate lock closure
+        if: ${{ inputs.verify-lock-closure }}
+        shell: bash
+        run: tools/natives/refresh-lock-closure.sh --check
+
+      - name: Install patchelf (Linux only)
+        if: startsWith(matrix.classifier, 'linux-')
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patchelf
+
+      - name: Stage native payload (includes C ABI shim build)
+        shell: bash
+        run: tools/natives/fetch-and-stage.sh ${{ matrix.classifier }}
+
+      - name: Audit runtime dependencies
+        shell: bash
+        run: tools/natives/audit-runtime-deps.sh ${{ matrix.classifier }}
+
+      - name: Assemble natives jars
+        shell: bash
+        run: ./gradlew :pdal-ffm-natives:assemble
+
+      - name: Run packaged smoke (twice, shared extraction cache)
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches=()
+          while IFS= read -r path; do
+            [[ -n "$path" ]] && matches+=("$path")
+          done < <(
+            find pdal-ffm-natives/build/libs -maxdepth 1 -type f \
+              -name "pdal-ffm-natives-*-natives-${{ matrix.classifier }}.jar" \
+              | sort
+          )
+          if [[ ${#matches[@]} -ne 1 ]]; then
+            echo "Expected exactly one native jar for classifier ${{ matrix.classifier }}, found ${#matches[@]}" >&2
+            printf '%s\n' "${matches[@]}" >&2 || true
+            exit 1
+          fi
+          jar_path="$(pwd)/${matches[0]}"
+          shared_tmpdir="$(pwd)/pdal-ffm-core/build/tmp/smoke/${{ matrix.classifier }}-shared"
+          for run_label in first second; do
+            ./gradlew :pdal-ffm-core:smokeTestPackagedNative \
+              -PpdalFfmSmokeNativeJar="$jar_path" \
+              -PpdalFfmSmokeLabel="${{ matrix.classifier }}-${run_label}" \
+              -PpdalFfmSmokeTmpDir="$shared_tmpdir"
+          done
+
+      - name: Upload classifier artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdal-ffm-natives-${{ matrix.classifier }}
+          path: pdal-ffm-natives/build/libs/pdal-ffm-natives-*-natives-${{ matrix.classifier }}.jar
+
+  publish:
+    needs: build-natives
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Make gradlew executable
+        shell: bash
+        run: chmod +x ./gradlew
+
+      - name: Download native release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pdal-ffm-natives*
+          merge-multiple: true
+          path: pdal-ffm-natives/build/libs
+
+      - name: Resolve project version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version=//p' gradle.properties | head -n1)"
+          if [[ -z "$version" ]]; then
+            echo "Could not resolve project version from gradle.properties" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $version"
+
+      - name: Verify downloaded native jars
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          classifiers=(
+            "linux-x86_64"
+            "linux-aarch64"
+            "osx-x86_64"
+            "osx-aarch64"
+            "windows-x86_64"
+          )
+          default_min_size_bytes=$((100 * 1024 * 1024))
+          windows_min_size_bytes=$((30 * 1024 * 1024))
+
+          actual="$(find pdal-ffm-natives/build/libs -maxdepth 1 -type f -name '*.jar' | wc -l | tr -d ' ')"
+          if [[ "$actual" -ne 5 ]]; then
+            echo "Expected exactly 5 native jars, got $actual" >&2
+            find pdal-ffm-natives/build/libs -maxdepth 1 -type f -name '*.jar' -print | sort >&2 || true
+            exit 1
+          fi
+
+          for classifier in "${classifiers[@]}"; do
+            min_size_bytes="$default_min_size_bytes"
+            if [[ "$classifier" == windows-* ]]; then
+              min_size_bytes="$windows_min_size_bytes"
+            fi
+            jar="pdal-ffm-natives/build/libs/pdal-ffm-natives-${version}-natives-${classifier}.jar"
+            if [[ ! -f "$jar" ]]; then
+              echo "Missing expected native jar: $jar" >&2
+              exit 1
+            fi
+            size_bytes="$(wc -c < "$jar" | tr -d ' ')"
+            if (( size_bytes < min_size_bytes )); then
+              echo "Native jar too small: $jar (${size_bytes} bytes, expected >= ${min_size_bytes})" >&2
+              exit 1
+            fi
+          done
+
+          find pdal-ffm-natives/build/libs -maxdepth 1 -type f -name '*.jar' -print | sort
+
+      - name: Publish artifacts
+        env:
+          MAVEN_REPOSITORY_URL: ${{ secrets.MAVEN_REPOSITORY_URL }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        shell: bash
+        run: |
+          ./gradlew \
+            :pdal-ffm-core:check \
+            :pdal-ffm-natives:check \
+            :pdal-ffm-core:publishMavenJavaPublicationToReleaseTargetRepository \
+            :pdal-ffm-natives:publishNativesPublicationToReleaseTargetRepository \
+            -x :pdal-ffm-natives:nativesJarLinuxX8664 \
+            -x :pdal-ffm-natives:nativesJarLinuxAarch64 \
+            -x :pdal-ffm-natives:nativesJarOsxX8664 \
+            -x :pdal-ffm-natives:nativesJarOsxAarch64 \
+            -x :pdal-ffm-natives:nativesJarWindowsX8664

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            os: ubuntu-24.04
+          - label: linux-aarch64
+            os: ubuntu-24.04-arm
+          - label: osx-x86_64
+            os: macos-15-intel
+          - label: osx-aarch64
+            os: macos-15
+          - label: windows-x86_64
+            os: windows-2025
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Make gradlew executable
+        shell: bash
+        run: chmod +x ./gradlew
+
+      - name: Build and test
+        shell: bash
+        run: ./gradlew clean check :pdal-ffm-natives:check
+
+      - name: Verify Runtime-Only Native Resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          classifiers=(
+            "linux-x86_64"
+            "linux-aarch64"
+            "osx-x86_64"
+            "osx-aarch64"
+            "windows-x86_64"
+          )
+
+          for classifier in "${classifiers[@]}"; do
+            root="pdal-ffm-natives/src/main/resources/META-INF/pdal-native/$classifier"
+            if [[ ! -d "$root" ]]; then
+              continue
+            fi
+
+            if [[ "$classifier" == windows-* ]]; then
+              if [[ -d "$root/bin" ]] && find "$root/bin" -type f ! -iname '*.dll' ! -name '.gitkeep' | grep -q .; then
+                echo "Non-DLL files found in windows runtime bin for $classifier" >&2
+                find "$root/bin" -type f ! -iname '*.dll' ! -name '.gitkeep' >&2
+                exit 1
+              fi
+            else
+              if [[ -d "$root/bin" ]] && find "$root/bin" -mindepth 1 ! -name '.gitkeep' -print -quit | grep -q .; then
+                echo "Unexpected non-empty bin directory in runtime bundle for $classifier" >&2
+                find "$root/bin" -mindepth 1 >&2
+                exit 1
+              fi
+            fi
+          done

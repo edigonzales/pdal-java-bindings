@@ -1,0 +1,4 @@
+rootProject.name = 'pdal-java-bindings'
+
+include 'pdal-ffm-core'
+include 'pdal-ffm-natives'

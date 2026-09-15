@@ -1,0 +1,205 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+
+plugins {
+    id 'java-base'
+    id 'maven-publish'
+}
+
+def nativeClassifiers = [
+        'linux-x86_64',
+        'linux-aarch64',
+        'osx-x86_64',
+        'osx-aarch64',
+        'windows-x86_64'
+]
+
+def toTaskSuffix = { String classifier ->
+    classifier.split('[-_]').collect { it.capitalize() }.join('')
+}
+
+def updateDigestWithFile = { MessageDigest digest, File file ->
+    file.withInputStream { input ->
+        byte[] buffer = new byte[8192]
+        int read
+        while ((read = input.read(buffer)) > 0) {
+            digest.update(buffer, 0, read)
+        }
+    }
+}
+
+def computeCacheKey = { String classifier, String artifactId, File classifierRoot, Map manifestData ->
+    def digest = MessageDigest.getInstance('SHA-256')
+    digest.update("artifactId=${artifactId}\n".getBytes(StandardCharsets.UTF_8))
+    digest.update("classifier=${classifier}\n".getBytes(StandardCharsets.UTF_8))
+    digest.update(JsonOutput.toJson(manifestData).getBytes(StandardCharsets.UTF_8))
+
+    def files = []
+    classifierRoot.eachFileRecurse { file ->
+        if (file.isFile() && file.name != 'manifest.json') {
+            files << file
+        }
+    }
+    files.sort { left, right ->
+        classifierRoot.toPath().relativize(left.toPath()).toString() <=>
+                classifierRoot.toPath().relativize(right.toPath()).toString()
+    }
+    files.each { file ->
+        def relativePath = classifierRoot.toPath().relativize(file.toPath()).toString()
+                .replace(File.separatorChar, '/' as char)
+        digest.update("\nfile=${relativePath}\n".getBytes(StandardCharsets.UTF_8))
+        updateDigestWithFile(digest, file)
+    }
+    return digest.digest().collect { String.format('%02x', it) }.join('')
+}
+
+def registerPackagedManifestTask = { String classifier, String artifactId ->
+    def classifierRoot = layout.projectDirectory.dir("src/main/resources/META-INF/pdal-native/$classifier")
+    def taskName = "generateNativesManifest${toTaskSuffix(classifier)}"
+    def outputFile = layout.buildDirectory.file("generated/packaged-manifests/$artifactId/$classifier/manifest.json")
+
+    def task = tasks.register(taskName) {
+        inputs.dir(classifierRoot)
+        inputs.property('artifactId', artifactId)
+        outputs.file(outputFile)
+
+        doLast {
+            def sourceManifestFile = classifierRoot.file('manifest.json').asFile
+            if (!sourceManifestFile.isFile()) {
+                throw new GradleException("Missing manifest.json for classifier: $classifier")
+            }
+            def sourceManifest = new JsonSlurper().parseText(sourceManifestFile.getText('UTF-8')) as Map
+            def manifestData = new LinkedHashMap(sourceManifest)
+            manifestData.remove('cacheKey')
+            manifestData['cacheKey'] = computeCacheKey(classifier, artifactId, classifierRoot.asFile, manifestData)
+
+            def targetFile = outputFile.get().asFile
+            targetFile.parentFile.mkdirs()
+            targetFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(manifestData)) + '\n', 'UTF-8')
+        }
+    }
+    return [task, outputFile]
+}
+
+def classifierJarTasks = nativeClassifiers.collectEntries { classifier ->
+    def classifierRoot = layout.projectDirectory.dir("src/main/resources/META-INF/pdal-native/$classifier")
+    def (manifestTask, manifestFile) = registerPackagedManifestTask(classifier, 'pdal-ffm-natives')
+
+    def jarTask = tasks.register("nativesJar${toTaskSuffix(classifier)}", Jar) {
+        group = LifecycleBasePlugin.BUILD_GROUP
+        description = "Builds the native bundle JAR for $classifier"
+        archiveBaseName = 'pdal-ffm-natives'
+        archiveClassifier = "natives-$classifier"
+
+        from(classifierRoot) {
+            into("META-INF/pdal-native/$classifier")
+            exclude('manifest.json')
+        }
+        from(manifestFile) {
+            into("META-INF/pdal-native/$classifier")
+        }
+        dependsOn(manifestTask)
+    }
+    return [(classifier): jarTask]
+}
+
+tasks.named('assemble') {
+    dependsOn(classifierJarTasks.values())
+}
+
+tasks.register('verifyNativeBundleLayout') {
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    description = 'Checks staged classifier manifests and declared bundle files.'
+
+    doLast {
+        nativeClassifiers.each { classifier ->
+            def classifierRoot = layout.projectDirectory
+                    .dir("src/main/resources/META-INF/pdal-native/$classifier").asFile
+            def manifestFile = new File(classifierRoot, 'manifest.json')
+            if (!manifestFile.isFile()) {
+                throw new GradleException("Missing manifest.json for classifier: $classifier")
+            }
+
+            def manifestData = new JsonSlurper().parseText(manifestFile.getText('UTF-8')) as Map
+
+            def hasPayload = classifierRoot.listFiles()?.any { file ->
+                file.isFile() && file.name != 'manifest.json' && file.name != 'README.txt'
+            } ?: false
+            if (!hasPayload) {
+                return
+            }
+
+            ['ffiLibrary', 'entryLibrary'].each { field ->
+                def path = manifestData[field] as String
+                if (!path) {
+                    throw new GradleException("Manifest for $classifier misses required field '$field'")
+                }
+                if (!new File(classifierRoot, path).isFile()) {
+                    throw new GradleException(
+                            "Manifest $field for classifier '$classifier' points to a missing file: $path")
+                }
+            }
+
+            def caBundlePath = (manifestData['caBundlePath'] as String)?.trim()
+            if (caBundlePath) {
+                if (!new File(classifierRoot, caBundlePath).isFile()) {
+                    throw new GradleException(
+                            "Manifest caBundlePath for classifier '$classifier' points to a missing file: $caBundlePath")
+                }
+            }
+
+            def isUnixClassifier = classifier.startsWith('linux-') || classifier.startsWith('osx-')
+            def hasLibcurl = new File(classifierRoot, 'lib').listFiles()?.any { file ->
+                file.isFile() && file.name.startsWith('libcurl.')
+            } ?: false
+            if (isUnixClassifier && hasLibcurl && !caBundlePath) {
+                throw new GradleException(
+                        "Unix classifier '$classifier' bundles libcurl but manifest.json does not declare caBundlePath")
+            }
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn('verifyNativeBundleLayout')
+}
+
+publishing {
+    publications {
+        natives(MavenPublication) {
+            artifactId = 'pdal-ffm-natives'
+            classifierJarTasks.values().each { jarTask ->
+                artifact(jarTask)
+            }
+            pom {
+                name = 'pdal-ffm-natives'
+                description = 'Bundled PDAL native runtime, C ABI shim and runtime data per platform classifier'
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'releaseTarget'
+            def publishUrl = providers.gradleProperty('publishRepositoryUrl')
+                    .orElse(providers.environmentVariable('MAVEN_REPOSITORY_URL'))
+                    .orElse(layout.buildDirectory.dir('repo').map { it.asFile.absolutePath })
+            url = uri(publishUrl.get())
+
+            def publishUser = providers.gradleProperty('publishUsername')
+                    .orElse(providers.environmentVariable('MAVEN_USERNAME'))
+                    .orNull
+            def publishPassword = providers.gradleProperty('publishPassword')
+                    .orElse(providers.environmentVariable('MAVEN_PASSWORD'))
+                    .orNull
+
+            if (publishUser != null && publishPassword != null) {
+                credentials {
+                    username = publishUser
+                    password = publishPassword
+                }
+            }
+        }
+    }
+}

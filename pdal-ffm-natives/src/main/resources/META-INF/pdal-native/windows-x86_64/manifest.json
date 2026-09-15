@@ -1,0 +1,11 @@
+{
+  "bundleVersion": "2.10.2",
+  "ffiLibrary": "bin/pdal_ffi.dll",
+  "entryLibrary": "bin/pdalcpp.dll",
+  "preloadLibraries": [
+    "bin/proj_9.dll"
+  ],
+  "gdalDataPath": "share/gdal",
+  "projDataPath": "share/proj",
+  "pluginPath": "bin"
+}

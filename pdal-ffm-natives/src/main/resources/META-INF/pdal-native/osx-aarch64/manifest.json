@@ -1,0 +1,12 @@
+{
+  "bundleVersion": "2.10.2",
+  "ffiLibrary": "lib/libpdal_ffi.dylib",
+  "entryLibrary": "lib/libpdalcpp.20.dylib",
+  "preloadLibraries": [
+    "lib/libproj.25.dylib"
+  ],
+  "gdalDataPath": "share/gdal",
+  "projDataPath": "share/proj",
+  "pluginPath": "lib",
+  "caBundlePath": "ssl/cacert.pem"
+}

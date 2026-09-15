@@ -1,0 +1,214 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+def currentNativeClassifier() {
+    def os = System.getProperty('os.name').toLowerCase()
+    def arch = System.getProperty('os.arch').toLowerCase()
+
+    if (os.contains('mac') || os.contains('darwin')) {
+        if (arch in ['aarch64', 'arm64']) {
+            return 'osx-aarch64'
+        }
+        if (arch in ['x86_64', 'amd64']) {
+            return 'osx-x86_64'
+        }
+        throw new GradleException("Unsupported macOS architecture for native test resources: ${arch}")
+    }
+    if (os.contains('linux')) {
+        if (arch in ['aarch64', 'arm64']) {
+            return 'linux-aarch64'
+        }
+        if (arch in ['x86_64', 'amd64']) {
+            return 'linux-x86_64'
+        }
+        throw new GradleException("Unsupported Linux architecture for native test resources: ${arch}")
+    }
+    if (os.contains('win')) {
+        if (arch in ['x86_64', 'amd64']) {
+            return 'windows-x86_64'
+        }
+        throw new GradleException("Unsupported Windows architecture for native test resources: ${arch}")
+    }
+    throw new GradleException("Unsupported operating system for native test resources: ${os}")
+}
+
+def hostNativeClassifier = currentNativeClassifier()
+
+def hostNativeResources = tasks.register('hostNativeResources', Sync) {
+    from(project(':pdal-ffm-natives').layout.projectDirectory.dir('src/main/resources')) {
+        include("META-INF/pdal-native/${hostNativeClassifier}/**")
+    }
+    into(layout.buildDirectory.dir('host-native-resources'))
+}
+
+def javaToolchainVersion = providers.gradleProperty('pdalFfmJavaToolchainVersion')
+        .map { it as int }
+        .orElse(25)
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(javaToolchainVersion.get())
+    }
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release.set(25)
+}
+
+sourceSets {
+    integrationTest {
+        java.srcDir 'src/integrationTest/java'
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    integrationTestImplementation platform('org.junit:junit-bom:5.11.4')
+    integrationTestImplementation 'org.junit.jupiter:junit-jupiter'
+    integrationTestRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+def integrationTest = tasks.register('integrationTest', Test) {
+    description = 'Runs integration tests that require the bundled PDAL libraries.'
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    dependsOn(hostNativeResources)
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath + files(hostNativeResources)
+    shouldRunAfter(tasks.named('test'))
+    onlyIf {
+        System.getenv('PDAL_FFM_RUN_INTEGRATION') == 'true'
+    }
+    maxHeapSize = '2g'
+    jvmArgs('--enable-native-access=ALL-UNNAMED')
+}
+
+tasks.register('smokeTest', JavaExec) {
+    description = 'Runs a PDAL faux -> LAZ -> crop -> LAZ smoke test using the staged host natives.'
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    dependsOn('integrationTestClasses', hostNativeResources)
+
+    def outputDir = layout.buildDirectory.dir('smoke-test-output').get().asFile
+
+    classpath = sourceSets.integrationTest.runtimeClasspath + files(hostNativeResources)
+    mainClass = 'ch.so.agi.pdal.ffm.PdalSmoke'
+    jvmArgs('--enable-native-access=ALL-UNNAMED')
+
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        outputDir.mkdirs()
+        setArgs([outputDir.absolutePath])
+    }
+}
+
+tasks.register('smokeTestPackagedNative', JavaExec) {
+    description = 'Runs the PDAL smoke test against a packaged native classifier JAR.'
+    group = LifecycleBasePlugin.VERIFICATION_GROUP
+    dependsOn('integrationTestClasses')
+
+    def smokeNativeJar = providers.gradleProperty('pdalFfmSmokeNativeJar')
+    def smokeLabel = providers.gradleProperty('pdalFfmSmokeLabel')
+            .map { it.trim() }
+            .orElse('packaged')
+    def smokeTmpDirOverride = providers.gradleProperty('pdalFfmSmokeTmpDir')
+    def tmpDir = smokeLabel.flatMap { label -> layout.buildDirectory.dir("tmp/smoke/${label}") }
+
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    mainClass = 'ch.so.agi.pdal.ffm.internal.PdalPackagedNativeSmoke'
+    inputs.property('pdalFfmSmokeNativeJar', smokeNativeJar.orNull ?: '')
+    inputs.property('pdalFfmSmokeLabel', smokeLabel)
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        def nativeJarPath = smokeNativeJar.orNull?.trim()
+        if (!nativeJarPath) {
+            throw new GradleException(
+                    'Missing required property -PpdalFfmSmokeNativeJar=<path-to-native-jar> for smokeTestPackagedNative.')
+        }
+        def nativeJarFile = new File(nativeJarPath)
+        if (!nativeJarFile.absolute) {
+            nativeJarFile = rootProject.file(nativeJarPath)
+        }
+        if (!nativeJarFile.isFile()) {
+            throw new GradleException("Packaged smoke native JAR does not exist: ${nativeJarFile.absolutePath}")
+        }
+
+        def smokeTmpDir = smokeTmpDirOverride.orNull?.trim()?.with { path ->
+            def overrideFile = new File(path)
+            overrideFile.absolute ? overrideFile : rootProject.file(path)
+        } ?: tmpDir.get().asFile
+        smokeTmpDir.mkdirs()
+
+        classpath = sourceSets.integrationTest.runtimeClasspath + files(nativeJarFile)
+        def smokeJvmArgs = [
+                '--enable-native-access=ALL-UNNAMED',
+                "-Djava.io.tmpdir=${smokeTmpDir.absolutePath}"
+        ]
+        if (!hostNativeClassifier.startsWith('windows-')) {
+            smokeJvmArgs += '-Dpdal.ffm.smoke.expectBundledCaBundle=true'
+        }
+        jvmArgs(smokeJvmArgs)
+
+        def outputDir = new File(smokeTmpDir, 'smoke-output')
+        outputDir.mkdirs()
+        setArgs([outputDir.absolutePath])
+    }
+}
+
+tasks.named('check') {
+    dependsOn(integrationTest)
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = 'pdal-ffm-core'
+            from components.java
+            pom {
+                name = 'pdal-ffm-core'
+                description = 'Java FFM core bindings and high-level API for executing PDAL pipelines'
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = 'releaseTarget'
+            def publishUrl = providers.gradleProperty('publishRepositoryUrl')
+                    .orElse(providers.environmentVariable('MAVEN_REPOSITORY_URL'))
+                    .orElse(layout.buildDirectory.dir('repo').map { it.asFile.absolutePath })
+            url = uri(publishUrl.get())
+
+            def publishUser = providers.gradleProperty('publishUsername')
+                    .orElse(providers.environmentVariable('MAVEN_USERNAME'))
+                    .orNull
+            def publishPassword = providers.gradleProperty('publishPassword')
+                    .orElse(providers.environmentVariable('MAVEN_PASSWORD'))
+                    .orNull
+
+            if (publishUser != null && publishPassword != null) {
+                credentials {
+                    username = publishUser
+                    password = publishPassword
+                }
+            }
+        }
+    }
+}

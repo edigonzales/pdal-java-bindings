@@ -1,3 +1,5 @@
+/tmp/
+/bin/
 .DS_Store
 
 # Compiled class file
@@ -14,6 +16,7 @@
 
 # Package Files #
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.nar
 *.ear
@@ -24,3 +27,15 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Native staging (only manifests and README files are tracked)
+pdal-ffm-natives/src/main/resources/META-INF/pdal-native/*/**
+!pdal-ffm-natives/src/main/resources/META-INF/pdal-native/*/
+!pdal-ffm-natives/src/main/resources/META-INF/pdal-native/*/README.txt
+!pdal-ffm-natives/src/main/resources/META-INF/pdal-native/*/manifest.json
