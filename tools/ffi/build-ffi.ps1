@@ -10,7 +10,8 @@
 #            pdal-ffm-natives\src\main\resources\META-INF\pdal-native\<classifier>.
 #
 # The MSVC environment is discovered through vswhere and initialized with
-# vcvars64.bat, so the script also works outside a Developer Command Prompt.
+# vcvars64.bat inside a generated batch file, so the script also works outside
+# a Developer Command Prompt.
 param(
     [Parameter(Mandatory = $true)][string]$Classifier,
     [string]$PdalRoot = $env:CONDA_PREFIX,
@@ -47,8 +48,15 @@ if (-not (Test-Path (Join-Path $PayloadRoot "include\pdal\pdal_export.hpp"))) {
 
 $IncludeDir = Join-Path $PayloadRoot "include"
 $LibDir = Join-Path $PayloadRoot "lib"
+$SourceDir = Split-Path $SourceFile -Parent
 $BinDir = Join-Path $StageDir "bin"
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+
+$PdalCppLib = Join-Path $LibDir "pdalcpp.lib"
+if (-not (Test-Path $PdalCppLib)) {
+    Write-Error "PDAL import library not found: $PdalCppLib"
+    exit 1
+}
 
 $Vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path $Vswhere)) {
@@ -68,21 +76,35 @@ if (-not (Test-Path $VcVars)) {
 
 $OutDll = Join-Path $BinDir "pdal_ffi.dll"
 $Implib = Join-Path $env:TEMP "pdal_ffi_$PID.lib"
+
+$BatchRoot = if ([string]::IsNullOrEmpty($env:RUNNER_TEMP)) { $env:TEMP } else { $env:RUNNER_TEMP }
+$BatchPath = Join-Path $BatchRoot "pdal_ffi_build_$PID.cmd"
+$BatchLines = @(
+    '@echo off',
+    'setlocal',
+    "call `"$VcVars`"",
+    'if errorlevel 1 (echo [build-ffi] vcvars64.bat failed & exit /b 11)',
+    "cl /nologo /std:c++17 /O2 /EHsc /MD /LD /D PDAL_FFI_BUILD /I `"$IncludeDir`" /I `"$SourceDir`" `"$SourceFile`" /link /LIBPATH:`"$LibDir`" pdalcpp.lib /OUT:`"$OutDll`" /IMPLIB:`"$Implib`"",
+    'exit /b %errorlevel%'
+)
+Set-Content -Path $BatchPath -Value $BatchLines -Encoding ASCII
+
 Write-Host "Building $OutDll with MSVC from $VsPath"
+Write-Host "--- batch file ($BatchPath) ---"
+Get-Content $BatchPath | ForEach-Object { Write-Host "| $_" }
+Write-Host "-------------------------------"
 
-$Command = @"
-call "$VcVars" >nul
-cl /nologo /std:c++17 /O2 /EHsc /MD /LD /D PDAL_FFI_BUILD ^
-  /I "$IncludeDir" /I "$(Split-Path $SourceFile -Parent)" ^
-  "$SourceFile" ^
-  /link /LIBPATH:"$LibDir" pdalcpp.lib /OUT:"$OutDll" /IMPLIB:"$Implib"
-"@
-
-& cmd.exe /d /s /c $Command
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "MSVC build failed with exit code $LASTEXITCODE"
-    exit $LASTEXITCODE
-}
-
+& cmd.exe /d /c "`"$BatchPath`""
+$ExitCode = $LASTEXITCODE
+Remove-Item -Force $BatchPath -ErrorAction SilentlyContinue
 Remove-Item -Force $Implib -ErrorAction SilentlyContinue
+
+if ($ExitCode -ne 0) {
+    Write-Error "MSVC build failed with exit code $ExitCode"
+    exit $ExitCode
+}
+if (-not (Test-Path $OutDll)) {
+    Write-Error "MSVC build did not produce $OutDll"
+    exit 1
+}
 Write-Host "FFI shim built: $OutDll"
