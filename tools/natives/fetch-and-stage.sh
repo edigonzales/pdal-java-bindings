@@ -506,7 +506,7 @@ stage_package() {
 
   if [[ "$need_download" == "true" ]]; then
     echo "Downloading $normalized_url"
-    curl --retry 5 --retry-delay 2 -fL "$normalized_url" -o "$archive_file"
+    curl --retry 5 --retry-delay 2 --retry-all-errors -fL "$normalized_url" -o "$archive_file"
   fi
 
   actual_sha="$(sha256_file "$archive_file")"

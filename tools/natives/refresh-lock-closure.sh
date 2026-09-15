@@ -308,7 +308,7 @@ def run_curl(url: str, target: Path):
     for attempt in range(1, 6):
         try:
             subprocess.run(
-                ["curl", "--retry", "5", "--retry-delay", "2", "-fL", url, "-o", str(target)],
+                ["curl", "--retry", "5", "--retry-delay", "2", "--retry-all-errors", "-fL", url, "-o", str(target)],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
