@@ -31,6 +31,11 @@ public final class PdalRuntime {
         this.version = version;
     }
 
+    /**
+     * Returns the shared runtime, loading the native bundle on first use.
+     *
+     * @return initialized runtime
+     */
     public static PdalRuntime instance() {
         PdalRuntime existing = INSTANCE.get();
         if (existing != null) {
@@ -58,14 +63,21 @@ public final class PdalRuntime {
         }
     }
 
+    /**
+     * Version of the bundled runtime.
+     *
+     * @return PDAL version string
+     */
     public String version() {
         return version;
     }
 
-    public NativeBundleInfo bundleInfo() {
-        return bundleInfo;
-    }
-
+    /**
+     * Executes a complete pipeline.
+     *
+     * @param pipelineJson PDAL pipeline document
+     * @return execution result
+     */
     public PdalResult execute(String pipelineJson) {
         if (pipelineJson == null || pipelineJson.isBlank()) {
             throw new IllegalArgumentException("pipelineJson must not be null or blank");
@@ -94,6 +106,12 @@ public final class PdalRuntime {
         }
     }
 
+    /**
+     * Computes a lightweight preview of a pipeline.
+     *
+     * @param pipelineJson PDAL pipeline document
+     * @return preview information
+     */
     public PdalPreview preview(String pipelineJson) {
         if (pipelineJson == null || pipelineJson.isBlank()) {
             throw new IllegalArgumentException("pipelineJson must not be null or blank");

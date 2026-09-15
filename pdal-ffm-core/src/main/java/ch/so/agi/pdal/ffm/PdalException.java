@@ -9,12 +9,24 @@ package ch.so.agi.pdal.ffm;
 public class PdalException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
+    /** Native error message as reported by PDAL, never {@code null}. */
     private final String nativeMessage;
 
+    /**
+     * Creates the exception from a native error message.
+     *
+     * @param message native error message, may be {@code null}
+     */
     public PdalException(String message) {
         this(message, null);
     }
 
+    /**
+     * Creates the exception from a native error message and a cause.
+     *
+     * @param message native error message, may be {@code null}
+     * @param cause underlying cause, may be {@code null}
+     */
     public PdalException(String message, Throwable cause) {
         super(buildMessage(message), cause);
         this.nativeMessage = message == null ? "" : message;

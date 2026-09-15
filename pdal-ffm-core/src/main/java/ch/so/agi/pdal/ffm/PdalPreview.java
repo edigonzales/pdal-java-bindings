@@ -22,7 +22,16 @@ public record PdalPreview(
         String srsAuthority,
         List<PdalDimension> dimensions) {
 
-    /** Axis aligned bounds in CRS units. */
+    /**
+     * Axis aligned bounds in CRS units.
+     *
+     * @param minX minimum X
+     * @param minY minimum Y
+     * @param minZ minimum Z
+     * @param maxX maximum X
+     * @param maxY maximum Y
+     * @param maxZ maximum Z
+     */
     public record Bounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
     }
 
@@ -35,6 +44,7 @@ public record PdalPreview(
      *     {@code FLOAT64}
      */
     public record PdalDimension(String name, String type) {
+        /** Validates the dimension. */
         public PdalDimension {
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("dimension name is required");
@@ -45,6 +55,7 @@ public record PdalPreview(
         }
     }
 
+    /** Validates the values and normalizes {@code null} strings to empty strings. */
     public PdalPreview {
         if (pointCount < 0) {
             throw new IllegalArgumentException("pointCount must not be negative");

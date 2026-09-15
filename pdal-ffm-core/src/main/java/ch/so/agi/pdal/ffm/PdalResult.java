@@ -14,6 +14,7 @@ package ch.so.agi.pdal.ffm;
  */
 public record PdalResult(long pointCount, String metadataJson, String log) {
 
+    /** Validates the values and normalizes {@code null} strings to empty strings. */
     public PdalResult {
         if (pointCount < 0) {
             throw new IllegalArgumentException("pointCount must not be negative");
