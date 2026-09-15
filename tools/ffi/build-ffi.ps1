@@ -84,7 +84,7 @@ $BatchLines = @(
     'setlocal',
     "call `"$VcVars`"",
     'if errorlevel 1 (echo [build-ffi] vcvars64.bat failed & exit /b 11)',
-    "cl /nologo /std:c++17 /O2 /EHsc /MD /LD /D PDAL_FFI_BUILD /I `"$IncludeDir`" /I `"$SourceDir`" `"$SourceFile`" /link /LIBPATH:`"$LibDir`" pdalcpp.lib /OUT:`"$OutDll`" /IMPLIB:`"$Implib`"",
+    "cl /nologo /std:c++17 /O2 /EHsc /MD /LD /D PDAL_FFI_BUILD /I `"$IncludeDir`" /I `"$SourceDir`" `"$SourceFile`" /link /LIBPATH:`"$LibDir`" pdalcpp.lib ws2_32.lib /OUT:`"$OutDll`" /IMPLIB:`"$Implib`"",
     'exit /b %errorlevel%'
 )
 Set-Content -Path $BatchPath -Value $BatchLines -Encoding ASCII
