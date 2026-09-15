@@ -8,6 +8,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -54,6 +55,40 @@ class PdalIntegrationTest {
 
         assertFalse(cropped.metadataJson().isBlank(), "metadata JSON is empty");
         assertTrue(cropped.metadataJson().startsWith("{"), "metadata is not a JSON object");
+    }
+
+    @Test
+    void previewsPointCloudWithoutExecuting(@TempDir Path tempDir) throws Exception {
+        Path input = tempDir.resolve("preview-input.laz");
+        Pdal.execute("""
+                {
+                  "pipeline": [
+                    { "type": "readers.faux", "mode": "ramp",
+                      "bounds": "([0,10],[0,20],[0,5])", "count": 1234 },
+                    { "type": "writers.las", "filename": "%s" }
+                  ]
+                }
+                """.formatted(jsonPath(input)));
+
+        PdalPreview preview = Pdal.preview("""
+                { "pipeline": [ { "type": "readers.las", "filename": "%s" } ] }
+                """.formatted(jsonPath(input)));
+
+        assertEquals(1234, preview.pointCount());
+        assertNotNull(preview.bounds(), "bounds are missing");
+        assertEquals(0.0, preview.bounds().minX(), 0.02);
+        assertEquals(10.0, preview.bounds().maxX(), 0.02);
+        assertEquals(20.0, preview.bounds().maxY(), 0.02);
+        assertEquals(5.0, preview.bounds().maxZ(), 0.02);
+        assertTrue(
+                preview.dimensions().stream()
+                        .anyMatch(d -> d.name().equals("X") && d.type().equals("FLOAT64")),
+                "X dimension is missing");
+        assertTrue(
+                preview.dimensions().stream()
+                        .anyMatch(d -> d.name().equals("Intensity") && d.type().equals("UINT16")),
+                "Intensity dimension is missing");
+        assertTrue(preview.srsWkt().isEmpty(), "unexpected CRS: " + preview.srsWkt());
     }
 
     @Test

@@ -45,6 +45,38 @@ PDAL_FFI_API void* pdal_ffi_pipeline_create(const char* json);
 /* Executes the pipeline. Returns 0 on success, non-zero on failure. */
 PDAL_FFI_API int32_t pdal_ffi_pipeline_execute(void* pipeline);
 
+/*
+ * Computes a lightweight preview (QuickInfo plus dimension layout) without
+ * reading the whole point cloud. Returns 0 on success, non-zero on failure.
+ * The preview accessors below return data after a successful preview.
+ */
+PDAL_FFI_API int32_t pdal_ffi_pipeline_preview(void* pipeline);
+
+/* Number of points reported by the preview. */
+PDAL_FFI_API uint64_t pdal_ffi_preview_point_count(void* pipeline);
+
+/* Pointer to six doubles (minX, minY, minZ, maxX, maxY, maxZ) or NULL. */
+PDAL_FFI_API const double* pdal_ffi_preview_bounds(void* pipeline);
+
+/* Spatial reference of the preview as WKT; empty string when unknown. */
+PDAL_FFI_API const char* pdal_ffi_preview_srs_wkt(void* pipeline);
+
+/* Authority code of the preview CRS (e.g. "EPSG:2056"); empty when unknown. */
+PDAL_FFI_API const char* pdal_ffi_preview_srs_authority(void* pipeline);
+
+/* Number of previewed dimensions. */
+PDAL_FFI_API int32_t pdal_ffi_preview_dimension_count(void* pipeline);
+
+/* Name of the previewed dimension at index (NULL when out of range). */
+PDAL_FFI_API const char* pdal_ffi_preview_dimension_name(void* pipeline, int32_t index);
+
+/*
+ * Storage type of the previewed dimension at index as one of
+ * INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FLOAT32, FLOAT64
+ * (NULL when out of range).
+ */
+PDAL_FFI_API const char* pdal_ffi_preview_dimension_type(void* pipeline, int32_t index);
+
 /* Number of points produced by the last successful execution. */
 PDAL_FFI_API uint64_t pdal_ffi_pipeline_point_count(void* pipeline);
 

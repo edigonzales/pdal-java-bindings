@@ -35,6 +35,38 @@ final class PdalNative {
             "pdal_ffi_pipeline_execute",
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
     );
+    static final MethodHandle PIPELINE_PREVIEW = downcall(
+            "pdal_ffi_pipeline_preview",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PREVIEW_POINT_COUNT = downcall(
+            "pdal_ffi_preview_point_count",
+            FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PREVIEW_BOUNDS = downcall(
+            "pdal_ffi_preview_bounds",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PREVIEW_SRS_WKT = downcall(
+            "pdal_ffi_preview_srs_wkt",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PREVIEW_SRS_AUTHORITY = downcall(
+            "pdal_ffi_preview_srs_authority",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PREVIEW_DIMENSION_COUNT = downcall(
+            "pdal_ffi_preview_dimension_count",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PREVIEW_DIMENSION_NAME = downcall(
+            "pdal_ffi_preview_dimension_name",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
+    );
+    static final MethodHandle PREVIEW_DIMENSION_TYPE = downcall(
+            "pdal_ffi_preview_dimension_type",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
+    );
     static final MethodHandle PIPELINE_POINT_COUNT = downcall(
             "pdal_ffi_pipeline_point_count",
             FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
@@ -88,6 +120,38 @@ final class PdalNative {
 
     static int execute(MemorySegment pipeline) {
         return invokeInt(PIPELINE_EXECUTE, pipeline);
+    }
+
+    static int preview(MemorySegment pipeline) {
+        return invokeInt(PIPELINE_PREVIEW, pipeline);
+    }
+
+    static long previewPointCount(MemorySegment pipeline) {
+        return invokeLong(PREVIEW_POINT_COUNT, pipeline);
+    }
+
+    static MemorySegment previewBounds(MemorySegment pipeline) {
+        return invokeAddress(PREVIEW_BOUNDS, pipeline);
+    }
+
+    static String previewSrsWkt(MemorySegment pipeline) {
+        return CStrings.fromCString(invokeAddress(PREVIEW_SRS_WKT, pipeline));
+    }
+
+    static String previewSrsAuthority(MemorySegment pipeline) {
+        return CStrings.fromCString(invokeAddress(PREVIEW_SRS_AUTHORITY, pipeline));
+    }
+
+    static int previewDimensionCount(MemorySegment pipeline) {
+        return invokeInt(PREVIEW_DIMENSION_COUNT, pipeline);
+    }
+
+    static String previewDimensionName(MemorySegment pipeline, int index) {
+        return CStrings.fromCString(invokeAddress(PREVIEW_DIMENSION_NAME, pipeline, index));
+    }
+
+    static String previewDimensionType(MemorySegment pipeline, int index) {
+        return CStrings.fromCString(invokeAddress(PREVIEW_DIMENSION_TYPE, pipeline, index));
     }
 
     static long pointCount(MemorySegment pipeline) {

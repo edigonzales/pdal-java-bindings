@@ -63,8 +63,21 @@ public final class PdalPackagedNativeSmoke {
         assertExtractedBundle();
         assertBundledCaBundleWhenExpected();
         assertErrorHandling();
+        assertPreview(input);
 
         System.out.println("OK packaged native smoke: " + cropped.pointCount() + " points");
+    }
+
+    private static void assertPreview(Path input) {
+        var preview =
+                Pdal.preview("""
+                        { "pipeline": [ { "type": "readers.las", "filename": "%s" } ] }
+                        """.formatted(jsonPath(input)));
+        require(preview.pointCount() == 4000, "preview reports " + preview.pointCount() + " points");
+        require(preview.bounds() != null, "preview bounds are missing");
+        require(
+                preview.dimensions().stream().anyMatch(d -> d.name().equals("X")),
+                "preview dimensions are missing");
     }
 
     private static void assertExtractedBundle() throws IOException {

@@ -1,11 +1,15 @@
 package ch.so.agi.pdal.ffm.internal;
 
 import ch.so.agi.pdal.ffm.PdalException;
+import ch.so.agi.pdal.ffm.PdalPreview;
 import ch.so.agi.pdal.ffm.PdalResult;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -88,6 +92,57 @@ public final class PdalRuntime {
                 PdalNative.destroyPipeline(pipeline);
             }
         }
+    }
+
+    public PdalPreview preview(String pipelineJson) {
+        if (pipelineJson == null || pipelineJson.isBlank()) {
+            throw new IllegalArgumentException("pipelineJson must not be null or blank");
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment json = arena.allocateFrom(pipelineJson);
+            MemorySegment pipeline = PdalNative.createPipeline(json);
+            if (pipeline == null || pipeline.equals(MemorySegment.NULL)) {
+                throw new PdalException("Failed to allocate a native pipeline handle");
+            }
+
+            try {
+                if (PdalNative.preview(pipeline) != 0) {
+                    throw new PdalException(requiredErrorMessage(pipeline));
+                }
+
+                long pointCount = PdalNative.previewPointCount(pipeline);
+                PdalPreview.Bounds bounds = readBounds(PdalNative.previewBounds(pipeline));
+                String srsWkt = PdalNative.previewSrsWkt(pipeline);
+                String srsAuthority = PdalNative.previewSrsAuthority(pipeline);
+                int dimensionCount = PdalNative.previewDimensionCount(pipeline);
+                List<PdalPreview.PdalDimension> dimensions = new ArrayList<>(Math.max(dimensionCount, 0));
+                for (int i = 0; i < dimensionCount; i++) {
+                    dimensions.add(new PdalPreview.PdalDimension(
+                            PdalNative.previewDimensionName(pipeline, i),
+                            PdalNative.previewDimensionType(pipeline, i)
+                    ));
+                }
+                return new PdalPreview(pointCount, bounds, srsWkt, srsAuthority, dimensions);
+            } finally {
+                PdalNative.destroyPipeline(pipeline);
+            }
+        }
+    }
+
+    private static PdalPreview.Bounds readBounds(MemorySegment address) {
+        if (CStrings.isNull(address)) {
+            return null;
+        }
+        MemorySegment bounds = address.reinterpret(6L * ValueLayout.JAVA_DOUBLE.byteSize());
+        return new PdalPreview.Bounds(
+                bounds.get(ValueLayout.JAVA_DOUBLE, 0),
+                bounds.get(ValueLayout.JAVA_DOUBLE, 8),
+                bounds.get(ValueLayout.JAVA_DOUBLE, 16),
+                bounds.get(ValueLayout.JAVA_DOUBLE, 24),
+                bounds.get(ValueLayout.JAVA_DOUBLE, 32),
+                bounds.get(ValueLayout.JAVA_DOUBLE, 40)
+        );
     }
 
     private static String requiredErrorMessage(MemorySegment pipeline) {

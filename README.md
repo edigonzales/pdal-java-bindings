@@ -56,6 +56,20 @@ String log = result.log();
 runs the whole pipeline inside the JVM process. `Pdal.version()` returns the
 version of the bundled PDAL runtime.
 
+`Pdal.preview` computes a lightweight description (point count, bounds, CRS and
+dimension layout) from the reader headers without reading the point cloud:
+
+```java
+PdalPreview preview = Pdal.preview("""
+    { "pipeline": [ { "type": "readers.las", "filename": "/data/input.laz" } ] }
+    """);
+
+long points = preview.pointCount();
+PdalPreview.Bounds bounds = preview.bounds();
+String crs = preview.srsAuthority();          // e.g. "EPSG:2056"
+List<PdalPreview.PdalDimension> dimensions = preview.dimensions();
+```
+
 Exactly one natives artifact for the current platform must be on the run-time
 class path. The loader extracts it lazily into
 `${java.io.tmpdir}/pdal-ffm/<cacheKey>/<classifier>` and loads
@@ -117,8 +131,9 @@ PDAL_FFM_RUN_INTEGRATION=true ./gradlew integrationTest   # staged host natives
 
 ## Roadmap
 
-- **V0.2**: point view access (`Pdal.preview`, block-wise dimension reads via
-  `pdal_ffi_view_*`/`read_dimension`)
+- **V0.2**: point view access (block-wise dimension reads via
+  `pdal_ffi_view_*`/`read_dimension`); the descriptor path (`Pdal.preview`) is
+  already available
 - **Hop integration**: `hop-pointcloud-type-plugin` (neutral value model) and
   `hop-pdal-plugin` (transforms fused into a single `PdalPlan` pipeline)
 - **geo-native-runtime**: long-term goal is one shared native GDAL/PROJ base

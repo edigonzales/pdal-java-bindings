@@ -51,4 +51,16 @@ public final class Pdal {
     public static PdalResult execute(String pipelineJson) {
         return PdalRuntime.instance().execute(pipelineJson);
     }
+
+    /**
+     * Computes a lightweight preview of a PDAL pipeline (point count, bounds,
+     * CRS and dimension layout) without executing it.
+     *
+     * @param pipelineJson PDAL pipeline JSON
+     * @return preview information
+     * @throws PdalException if the pipeline cannot be read or previewed
+     */
+    public static PdalPreview preview(String pipelineJson) {
+        return PdalRuntime.instance().preview(pipelineJson);
+    }
 }
