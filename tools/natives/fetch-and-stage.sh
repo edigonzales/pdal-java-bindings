@@ -577,6 +577,10 @@ fi
 
 build_ffi_shim
 
+# Rewrite conda build paths (for example libcurl's baked-in CA file) before the
+# binaries are signed by the relocation step.
+"$ROOT_DIR/tools/natives/patch-embedded-paths.sh" "$CLASSIFIER" "$TARGET_DIR"
+
 prune_runtime_payload "$OS_FAMILY"
 "$ROOT_DIR/tools/natives/relocate-runtime-deps.sh" "$CLASSIFIER" "$TARGET_DIR"
 

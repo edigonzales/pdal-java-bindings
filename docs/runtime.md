@@ -43,8 +43,9 @@ packaging the classifier JAR.
 2. `tools/natives/fetch-and-stage.sh <classifier>`
    downloads and verifies every pinned package, copies `lib`/`bin`/`share`
    payloads into the staging directory, builds the C ABI shim with
-   `tools/ffi/build-ffi.{sh,ps1}`, prunes non-runtime files and writes the
-   manifest.
+   `tools/ffi/build-ffi.{sh,ps1}`, rewrites embedded conda build paths
+   (`tools/natives/patch-embedded-paths.sh`), prunes non-runtime files and
+   writes the manifest.
 3. `tools/natives/relocate-runtime-deps.sh <classifier>` rewrites Linux
    `DT_NEEDED` entries (patchelf or lief), normalizes macOS install names to
    `@rpath` and ad-hoc signs the binaries, and validates Windows DLLs.
@@ -75,6 +76,22 @@ native shim before the first pipeline runs:
 
 The versions of the bundled runtime are checked by `Pdal.version()` and
 covered by the smoke tests.
+
+## Embedded conda paths
+
+conda-forge binaries bake absolute paths of their build machine into string
+constants. The staging pipeline rewrites the CA related ones before the
+binaries are ad-hoc signed:
+
+- libcurl's default CA file becomes `/etc/ssl/cert.pem` (macOS) or
+  `/etc/ssl/certs/ca-certificates.crt` (Linux)
+- OpenSSL's default directory becomes `/etc/ssl` (macOS) or `/etc/ssl/certs`
+  (Linux)
+
+The bundled `ssl/cacert.pem` is still applied at runtime through
+`CURL_CA_BUNDLE` and `SSL_CERT_FILE`. Without the rewrite libcurl fails while
+building its TLS trust store and remote COPC/EPT reads fail even though a CA
+bundle is exported.
 
 On Windows the C ABI shim is compiled with the MSVC toolset (same major
 version as the conda packages) and links dynamically against the Microsoft
