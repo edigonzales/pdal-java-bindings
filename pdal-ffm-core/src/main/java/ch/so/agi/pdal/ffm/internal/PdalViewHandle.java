@@ -17,22 +17,49 @@ import java.util.List;
 public final class PdalViewHandle implements AutoCloseable {
     private MemorySegment pipeline;
 
+    /**
+     * Wraps an executed native pipeline.
+     *
+     * @param pipeline native pipeline handle owned by this instance
+     */
     PdalViewHandle(MemorySegment pipeline) {
         this.pipeline = pipeline;
     }
 
+    /**
+     * Total number of points of all views.
+     *
+     * @return point count
+     */
     public long pointCount() {
         return PdalNative.pointCount(requireOpen());
     }
 
+    /**
+     * Number of point views.
+     *
+     * @return number of views
+     */
     public int viewCount() {
         return PdalNative.viewCount(requireOpen());
     }
 
+    /**
+     * Number of points in the given view.
+     *
+     * @param view view index
+     * @return point count of that view
+     */
     public long viewPointCount(int view) {
         return PdalNative.viewPointCount(requireOpen(), view);
     }
 
+    /**
+     * Dimension layout of the given view.
+     *
+     * @param view view index
+     * @return dimension names and types
+     */
     public List<PdalPreview.PdalDimension> dimensions(int view) {
         MemorySegment handle = requireOpen();
         int count = PdalNative.viewDimensionCount(handle, view);
@@ -48,6 +75,15 @@ public final class PdalViewHandle implements AutoCloseable {
         return List.copyOf(dimensions);
     }
 
+    /**
+     * Reads a block of values as double.
+     *
+     * @param view view index
+     * @param dimension dimension name
+     * @param start index of the first point
+     * @param count number of points
+     * @return values, one per point
+     */
     public double[] readDoubles(int view, String dimension, long start, int count) {
         MemorySegment handle = requireOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -66,6 +102,15 @@ public final class PdalViewHandle implements AutoCloseable {
         }
     }
 
+    /**
+     * Reads a block of values as long.
+     *
+     * @param view view index
+     * @param dimension dimension name
+     * @param start index of the first point
+     * @param count number of points
+     * @return values, one per point
+     */
     public long[] readInts(int view, String dimension, long start, int count) {
         MemorySegment handle = requireOpen();
         try (Arena arena = Arena.ofConfined()) {
@@ -92,6 +137,7 @@ public final class PdalViewHandle implements AutoCloseable {
         return handle;
     }
 
+    /** Releases the native pipeline and all point views. */
     @Override
     public void close() {
         MemorySegment handle = pipeline;

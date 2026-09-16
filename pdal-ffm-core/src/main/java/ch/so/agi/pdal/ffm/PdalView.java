@@ -37,22 +37,40 @@ public final class PdalView implements AutoCloseable {
         this.handle = handle;
     }
 
-    /** Total number of points of all views. */
+    /**
+     * Total number of points of all views.
+     *
+     * @return point count
+     */
     public long pointCount() {
         return handle.pointCount();
     }
 
-    /** Number of point views (usually one; the merger and multiple readers produce one per plan). */
+    /**
+     * Number of point views (usually one).
+     *
+     * @return number of views
+     */
     public int viewCount() {
         return handle.viewCount();
     }
 
-    /** Number of points in the given view. */
+    /**
+     * Number of points in the given view.
+     *
+     * @param view view index
+     * @return point count of that view
+     */
     public long pointCount(int view) {
         return handle.viewPointCount(view);
     }
 
-    /** Dimension layout of the given view. */
+    /**
+     * Dimension layout of the given view.
+     *
+     * @param view view index
+     * @return dimension names and types
+     */
     public List<PdalPreview.PdalDimension> dimensions(int view) {
         return handle.dimensions(view);
     }
