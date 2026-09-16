@@ -35,6 +35,40 @@ final class PdalNative {
             "pdal_ffi_pipeline_execute",
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
     );
+    static final MethodHandle PIPELINE_EXECUTE_VIEW = downcall(
+            "pdal_ffi_pipeline_execute_view",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle PIPELINE_VIEW_COUNT = downcall(
+            "pdal_ffi_pipeline_view_count",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle VIEW_POINT_COUNT = downcall(
+            "pdal_ffi_view_point_count",
+            FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
+    );
+    static final MethodHandle VIEW_DIMENSION_COUNT = downcall(
+            "pdal_ffi_view_dimension_count",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT)
+    );
+    static final MethodHandle VIEW_DIMENSION_NAME = downcall(
+            "pdal_ffi_view_dimension_name",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
+    );
+    static final MethodHandle VIEW_DIMENSION_TYPE = downcall(
+            "pdal_ffi_view_dimension_type",
+            FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
+    );
+    static final MethodHandle VIEW_READ_DOUBLE = downcall(
+            "pdal_ffi_view_read_double",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
+    );
+    static final MethodHandle VIEW_READ_INT64 = downcall(
+            "pdal_ffi_view_read_int64",
+            FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+                    ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS)
+    );
     static final MethodHandle PIPELINE_PREVIEW = downcall(
             "pdal_ffi_pipeline_preview",
             FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS)
@@ -120,6 +154,42 @@ final class PdalNative {
 
     static int execute(MemorySegment pipeline) {
         return invokeInt(PIPELINE_EXECUTE, pipeline);
+    }
+
+    static int executeView(MemorySegment pipeline) {
+        return invokeInt(PIPELINE_EXECUTE_VIEW, pipeline);
+    }
+
+    static int viewCount(MemorySegment pipeline) {
+        return invokeInt(PIPELINE_VIEW_COUNT, pipeline);
+    }
+
+    static long viewPointCount(MemorySegment pipeline, int view) {
+        return invokeLong(VIEW_POINT_COUNT, pipeline, view);
+    }
+
+    static int viewDimensionCount(MemorySegment pipeline, int view) {
+        return invokeInt(VIEW_DIMENSION_COUNT, pipeline, view);
+    }
+
+    static String viewDimensionName(MemorySegment pipeline, int view, int index) {
+        return CStrings.fromCString(invokeAddress(VIEW_DIMENSION_NAME, pipeline, view, index));
+    }
+
+    static String viewDimensionType(MemorySegment pipeline, int view, int index) {
+        return CStrings.fromCString(invokeAddress(VIEW_DIMENSION_TYPE, pipeline, view, index));
+    }
+
+    static int readDoubles(
+            MemorySegment pipeline, int view, MemorySegment dimension, long start, long count,
+            MemorySegment target) {
+        return invokeInt(VIEW_READ_DOUBLE, pipeline, view, dimension, start, count, target);
+    }
+
+    static int readInts(
+            MemorySegment pipeline, int view, MemorySegment dimension, long start, long count,
+            MemorySegment target) {
+        return invokeInt(VIEW_READ_INT64, pipeline, view, dimension, start, count, target);
     }
 
     static int preview(MemorySegment pipeline) {

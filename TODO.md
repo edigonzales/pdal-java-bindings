@@ -7,12 +7,13 @@
 - [x] conda-based lock/resolver/staging/relocation/audit toolchain
 - [x] V0.1 API: `Pdal.version()`, `Pdal.execute(json)`, `PdalResult`, `PdalException`
 - [x] preview API: `Pdal.preview(json)` (point count, bounds, CRS, dimension layout)
+- [x] V0.2 point access: `Pdal.open(json)`/`PdalView` with block-wise dimension reads
+- [x] embedded conda path cleanup (libcurl CA path) so HTTPS reads work from the bundle
 - [x] unit tests, integration tests and packaged-native smoke tests
 - [x] CI workflows (ci, natives, release)
 
 ## Open
 
-- [ ] V0.2: point view access (block-wise dimension reads)
 - [ ] optional stage discovery (`availableDrivers()`) for UI building
 - [ ] optional PROJ grid data (`proj-data`, ~520 MB per classifier) as separate
       variant, analogous to the Swiss subset in `gdal-java-bindings`; V0.1 only

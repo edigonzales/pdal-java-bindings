@@ -78,6 +78,44 @@ PDAL_FFI_API const char* pdal_ffi_preview_dimension_name(void* pipeline, int32_t
 PDAL_FFI_API const char* pdal_ffi_preview_dimension_type(void* pipeline, int32_t index);
 
 /* Number of points produced by the last successful execution. */
+PDAL_FFI_API /*
+ * Executes the pipeline in standard mode and keeps the resulting point views
+ * in memory for block-wise access via the pdal_ffi_view_* functions below.
+ * Returns 0 on success, non-zero on failure.
+ */
+PDAL_FFI_API int32_t pdal_ffi_pipeline_execute_view(void* pipeline);
+
+/* Number of point views of the last view execution. */
+PDAL_FFI_API int32_t pdal_ffi_pipeline_view_count(void* pipeline);
+
+/* Number of points in the given view. */
+PDAL_FFI_API uint64_t pdal_ffi_view_point_count(void* pipeline, int32_t view);
+
+/* Number of dimensions in the given view. */
+PDAL_FFI_API int32_t pdal_ffi_view_dimension_count(void* pipeline, int32_t view);
+
+/* Name of the dimension at index; NULL when the view or index is invalid. */
+PDAL_FFI_API const char* pdal_ffi_view_dimension_name(void* pipeline, int32_t view, int32_t index);
+
+/*
+ * Storage type of the dimension at index as one of
+ * INT8, UINT8, INT16, UINT16, INT32, UINT32, INT64, UINT64, FLOAT32, FLOAT64
+ * (NULL when the view or index is invalid).
+ */
+PDAL_FFI_API const char* pdal_ffi_view_dimension_type(void* pipeline, int32_t view, int32_t index);
+
+/*
+ * Copies 'count' values of the named dimension starting at 'start' into
+ * 'target'. Returns 0 on success, non-zero when the view, dimension or range
+ * is invalid.
+ */
+PDAL_FFI_API int32_t pdal_ffi_view_read_double(
+    void* pipeline, int32_t view, const char* dimension, uint64_t start, uint64_t count, double* target);
+
+PDAL_FFI_API int32_t pdal_ffi_view_read_int64(
+    void* pipeline, int32_t view, const char* dimension, uint64_t start, uint64_t count, int64_t* target);
+
+/* Number of points produced by the last successful execution. */
 PDAL_FFI_API uint64_t pdal_ffi_pipeline_point_count(void* pipeline);
 
 /* Pipeline metadata as JSON. Empty string if no metadata is available. */

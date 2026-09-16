@@ -63,4 +63,17 @@ public final class Pdal {
     public static PdalPreview preview(String pipelineJson) {
         return PdalRuntime.instance().preview(pipelineJson);
     }
+
+    /**
+     * Executes a PDAL pipeline and returns block-wise access to the resulting
+     * points. The pipeline runs in standard mode and keeps the points in native
+     * memory until the view is closed.
+     *
+     * @param pipelineJson PDAL pipeline JSON
+     * @return view with block-wise dimension reads
+     * @throws PdalException if the pipeline cannot be read or executed
+     */
+    public static PdalView open(String pipelineJson) {
+        return new PdalView(PdalRuntime.instance().open(pipelineJson));
+    }
 }

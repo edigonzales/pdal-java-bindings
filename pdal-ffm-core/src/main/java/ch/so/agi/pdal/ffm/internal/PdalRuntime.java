@@ -107,6 +107,33 @@ public final class PdalRuntime {
     }
 
     /**
+     * Executes a pipeline in standard mode and keeps the resulting point views
+     * for block-wise access.
+     *
+     * @param pipelineJson PDAL pipeline document
+     * @return view handle; close it to release the native resources
+     */
+    public PdalViewHandle open(String pipelineJson) {
+        if (pipelineJson == null || pipelineJson.isBlank()) {
+            throw new IllegalArgumentException("pipelineJson must not be null or blank");
+        }
+        MemorySegment pipeline;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment json = arena.allocateFrom(pipelineJson);
+            pipeline = PdalNative.createPipeline(json);
+        }
+        if (pipeline == null || pipeline.equals(MemorySegment.NULL)) {
+            throw new PdalException("Failed to allocate a native pipeline handle");
+        }
+        if (PdalNative.executeView(pipeline) != 0) {
+            String message = requiredErrorMessage(pipeline);
+            PdalNative.destroyPipeline(pipeline);
+            throw new PdalException(message);
+        }
+        return new PdalViewHandle(pipeline);
+    }
+
+    /**
      * Computes a lightweight preview of a pipeline.
      *
      * @param pipelineJson PDAL pipeline document

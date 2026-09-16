@@ -12,6 +12,7 @@
 #include <pdal/PipelineManager.hpp>
 #include <pdal/PointLayout.hpp>
 #include <pdal/PointTable.hpp>
+#include <pdal/PointView.hpp>
 #include <pdal/QuickInfo.hpp>
 #include <pdal/SpatialReference.hpp>
 #include <pdal/pdal_config.hpp>
@@ -47,7 +48,26 @@ struct PipelineHandle {
     std::string previewSrsWkt;
     std::string previewSrsAuthority;
     std::vector<std::pair<std::string, std::string>> previewDimensions;
+
+    std::vector<pdal::PointViewPtr> views;
+    std::vector<std::vector<std::pair<std::string, std::string>>> viewDimensions;
+    bool viewsExecuted = false;
 };
+
+pdal::PointViewPtr viewAt(PipelineHandle* handle, int32_t view) {
+    if (handle == nullptr || !handle->viewsExecuted || view < 0
+        || static_cast<size_t>(view) >= handle->views.size()) {
+        return nullptr;
+    }
+    return handle->views[static_cast<size_t>(view)];
+}
+
+pdal::Dimension::Id dimensionAt(const pdal::PointViewPtr& view, const char* name) {
+    if (name == nullptr) {
+        return pdal::Dimension::Id::Unknown;
+    }
+    return view->layout()->findDim(std::string(name));
+}
 
 std::string exceptionMessage(const std::exception& e) {
     const char* what = e.what();
@@ -272,6 +292,133 @@ uint64_t pdal_ffi_pipeline_point_count(void* pipeline) {
         return 0;
     }
     return handle->pointCount;
+}
+
+int32_t pdal_ffi_pipeline_execute_view(void* pipeline) {
+    auto* handle = static_cast<PipelineHandle*>(pipeline);
+    if (handle == nullptr) {
+        return 1;
+    }
+    if (!handle->error.empty()) {
+        return 1;
+    }
+    try {
+        handle->manager->execute(pdal::ExecMode::Standard);
+        const pdal::PointViewSet& viewSet = handle->manager->views();
+        handle->views.assign(viewSet.begin(), viewSet.end());
+        handle->pointCount = 0;
+        handle->viewDimensions.clear();
+        for (const pdal::PointViewPtr& view : handle->views) {
+            handle->pointCount += view->size();
+            std::vector<std::pair<std::string, std::string>> dimensions;
+            pdal::PointLayoutPtr layout = view->layout();
+            for (pdal::Dimension::Id id : layout->dims()) {
+                dimensions.emplace_back(
+                    layout->dimName(id), std::string(dimTypeName(layout->dimType(id))));
+            }
+            handle->viewDimensions.push_back(std::move(dimensions));
+        }
+        handle->viewsExecuted = true;
+        handle->executed = true;
+        return 0;
+    } catch (const std::exception& e) {
+        handle->error = exceptionMessage(e);
+        return 1;
+    } catch (...) {
+        handle->error = "unknown error while executing pipeline for point access";
+        return 1;
+    }
+}
+
+int32_t pdal_ffi_pipeline_view_count(void* pipeline) {
+    auto* handle = static_cast<PipelineHandle*>(pipeline);
+    if (handle == nullptr || !handle->viewsExecuted) {
+        return 0;
+    }
+    return static_cast<int32_t>(handle->views.size());
+}
+
+uint64_t pdal_ffi_view_point_count(void* pipeline, int32_t view) {
+    pdal::PointViewPtr pointView = viewAt(static_cast<PipelineHandle*>(pipeline), view);
+    if (pointView == nullptr) {
+        return 0;
+    }
+    return pointView->size();
+}
+
+int32_t pdal_ffi_view_dimension_count(void* pipeline, int32_t view) {
+    auto* handle = static_cast<PipelineHandle*>(pipeline);
+    if (handle == nullptr || !handle->viewsExecuted || view < 0
+        || static_cast<size_t>(view) >= handle->viewDimensions.size()) {
+        return 0;
+    }
+    return static_cast<int32_t>(handle->viewDimensions[static_cast<size_t>(view)].size());
+}
+
+const char* pdal_ffi_view_dimension_name(void* pipeline, int32_t view, int32_t index) {
+    auto* handle = static_cast<PipelineHandle*>(pipeline);
+    if (handle == nullptr || !handle->viewsExecuted || view < 0
+        || static_cast<size_t>(view) >= handle->viewDimensions.size()) {
+        return nullptr;
+    }
+    const auto& dimensions = handle->viewDimensions[static_cast<size_t>(view)];
+    if (index < 0 || static_cast<size_t>(index) >= dimensions.size()) {
+        return nullptr;
+    }
+    return dimensions[static_cast<size_t>(index)].first.c_str();
+}
+
+const char* pdal_ffi_view_dimension_type(void* pipeline, int32_t view, int32_t index) {
+    auto* handle = static_cast<PipelineHandle*>(pipeline);
+    if (handle == nullptr || !handle->viewsExecuted || view < 0
+        || static_cast<size_t>(view) >= handle->viewDimensions.size()) {
+        return nullptr;
+    }
+    const auto& dimensions = handle->viewDimensions[static_cast<size_t>(view)];
+    if (index < 0 || static_cast<size_t>(index) >= dimensions.size()) {
+        return nullptr;
+    }
+    return dimensions[static_cast<size_t>(index)].second.c_str();
+}
+
+int32_t pdal_ffi_view_read_double(
+    void* pipeline, int32_t view, const char* dimension, uint64_t start, uint64_t count,
+    double* target) {
+    pdal::PointViewPtr pointView = viewAt(static_cast<PipelineHandle*>(pipeline), view);
+    if (pointView == nullptr || target == nullptr) {
+        return 1;
+    }
+    pdal::Dimension::Id id = dimensionAt(pointView, dimension);
+    if (id == pdal::Dimension::Id::Unknown) {
+        return 2;
+    }
+    if (start > pointView->size() || count > pointView->size() - start) {
+        return 3;
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+        target[i] = pointView->getFieldAs<double>(id, start + i);
+    }
+    return 0;
+}
+
+int32_t pdal_ffi_view_read_int64(
+    void* pipeline, int32_t view, const char* dimension, uint64_t start, uint64_t count,
+    int64_t* target) {
+    pdal::PointViewPtr pointView = viewAt(static_cast<PipelineHandle*>(pipeline), view);
+    if (pointView == nullptr || target == nullptr) {
+        return 1;
+    }
+    pdal::Dimension::Id id = dimensionAt(pointView, dimension);
+    if (id == pdal::Dimension::Id::Unknown) {
+        return 2;
+    }
+    if (start > pointView->size() || count > pointView->size() - start) {
+        return 3;
+    }
+    for (uint64_t i = 0; i < count; ++i) {
+        target[i] = pointView->getFieldAs<int64_t>(id, start + i);
+    }
+    return 0;
 }
 
 const char* pdal_ffi_pipeline_metadata(void* pipeline) {

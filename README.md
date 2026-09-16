@@ -70,6 +70,23 @@ String crs = preview.srsAuthority();          // e.g. "EPSG:2056"
 List<PdalPreview.PdalDimension> dimensions = preview.dimensions();
 ```
 
+`Pdal.open` executes a pipeline in standard mode and returns block-wise access
+to the points - the points stay in native memory, blocks of at most 1,048,576
+points are copied into Java arrays:
+
+```java
+try (PdalView view = Pdal.open("""
+    { "pipeline": [ { "type": "readers.las", "filename": "/data/input.laz" } ] }
+    """)) {
+    long count = view.pointCount(0);
+    for (long start = 0; start < count; start += 100_000) {
+        int block = (int) Math.min(100_000, count - start);
+        double[] x = view.readDoubles(0, "X", start, block);
+        long[] classification = view.readInts(0, "Classification", start, block);
+    }
+}
+```
+
 Exactly one natives artifact for the current platform must be on the run-time
 class path. The loader extracts it lazily into
 `${java.io.tmpdir}/pdal-ffm/<cacheKey>/<classifier>` and loads
@@ -131,9 +148,8 @@ PDAL_FFM_RUN_INTEGRATION=true ./gradlew integrationTest   # staged host natives
 
 ## Roadmap
 
-- **V0.2**: point view access (block-wise dimension reads via
-  `pdal_ffi_view_*`/`read_dimension`); the descriptor path (`Pdal.preview`) is
-  already available
+- **V0.2**: point view access is available (`Pdal.open`/`PdalView`, block-wise
+  dimension reads); the descriptor path (`Pdal.preview`) is available as well
 - **Hop integration**: `hop-pointcloud-type-plugin` (neutral value model) and
   `hop-pdal-plugin` (transforms fused into a single `PdalPlan` pipeline)
 - **geo-native-runtime**: long-term goal is one shared native GDAL/PROJ base
