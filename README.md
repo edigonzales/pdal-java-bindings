@@ -158,9 +158,6 @@ PDAL_FFM_RUN_INTEGRATION=true ./gradlew integrationTest   # staged host natives
 
 ## Notes
 
-- `tools/jextract` contains a JDK 25 jextract distribution. The current
-  bindings are hand-written because the C ABI is tiny; jextract can be used
-  again when the binding surface grows.
 - Bundling follows the same model as `gdal-java-bindings`: pinned conda
   packages, classifier JARs, runtime relocation (patchelf/install_name_tool,
   ad-hoc codesign) and a dependency audit per platform.
